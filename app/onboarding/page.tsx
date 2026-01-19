@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useMutation, useQuery, Authenticated, Unauthenticated } from 'convex/react'
 import { api } from '@/convex/_generated/api'
 import { SignInButton } from '@clerk/nextjs'
-import { Link, Zap, Loader2 } from 'lucide-react'
+import { Link, Zap, Loader2, User, Timer, TrendingUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export default function OnboardingPage() {
@@ -41,13 +41,23 @@ function OnboardingContent() {
   const ensureUserExists = useMutation(api.users.ensureUserExists)
   const connectData = useMutation(api.users.connectData)
   const analyzeActivities = useMutation(api.users.analyzeActivities)
+  const updateManualStats = useMutation(api.users.updateManualStats)
 
-  const [connectionType, setConnectionType] = useState<'link' | 'terra'>('link')
+  const [connectionType, setConnectionType] = useState<'link' | 'terra' | 'manual'>('manual')
   const [linkUrl, setLinkUrl] = useState('')
   const [isConnecting, setIsConnecting] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [isCreatingUser, setIsCreatingUser] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Manual entry state
+  const [age, setAge] = useState('')
+  const [gender, setGender] = useState<'male' | 'female' | 'other' | ''>('')
+  const [weeklyMileage, setWeeklyMileage] = useState('')
+  const [fiveKPR, setFiveKPR] = useState('')
+  const [tenKPR, setTenKPR] = useState('')
+  const [halfMarathonPR, setHalfMarathonPR] = useState('')
+  const [isSavingManual, setIsSavingManual] = useState(false)
 
   const hasValidUser = isValidUser(currentUser)
 
@@ -124,6 +134,35 @@ function OnboardingContent() {
     }
   }
 
+  const handleManualSubmit = async () => {
+    // Validate at least one PR is provided
+    if (!fiveKPR && !tenKPR && !halfMarathonPR) {
+      setError('Please enter at least one recent PR time')
+      return
+    }
+
+    setIsSavingManual(true)
+    setError(null)
+
+    try {
+      await updateManualStats({
+        age: age ? parseInt(age) : undefined,
+        gender: gender || undefined,
+        weeklyMileage: weeklyMileage ? parseFloat(weeklyMileage) : undefined,
+        fiveKPR: fiveKPR || undefined,
+        tenKPR: tenKPR || undefined,
+        halfMarathonPR: halfMarathonPR || undefined,
+      })
+
+      // Mark onboarding as complete and go to dashboard
+      router.push('/dashboard')
+    } catch (err: any) {
+      setError(err.message || 'Failed to save. Please try again.')
+    } finally {
+      setIsSavingManual(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
       <div className="max-w-2xl mx-auto px-4 py-16">
@@ -136,7 +175,23 @@ function OnboardingContent() {
 
         <div className="bg-[#1a1a1a] rounded-2xl p-8 space-y-6">
           {/* Connection Type Toggle */}
-          <div className="flex gap-4">
+          <div className="flex gap-2 sm:gap-4">
+            <button
+              type="button"
+              onClick={() => {
+                setConnectionType('manual')
+                setError(null)
+              }}
+              className={cn(
+                'flex-1 py-4 px-3 sm:px-6 rounded-xl font-medium transition-all border-2',
+                connectionType === 'manual'
+                  ? 'bg-[#00ff88]/10 border-[#00ff88] text-[#00ff88]'
+                  : 'bg-[#0a0a0a] border-gray-700 text-gray-400 hover:border-gray-600'
+              )}
+            >
+              <User className="w-5 h-5 mx-auto mb-2" />
+              <span className="text-sm">Manual</span>
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -144,14 +199,14 @@ function OnboardingContent() {
                 setError(null)
               }}
               className={cn(
-                'flex-1 py-4 px-6 rounded-xl font-medium transition-all border-2',
+                'flex-1 py-4 px-3 sm:px-6 rounded-xl font-medium transition-all border-2',
                 connectionType === 'link'
                   ? 'bg-[#00ff88]/10 border-[#00ff88] text-[#00ff88]'
                   : 'bg-[#0a0a0a] border-gray-700 text-gray-400 hover:border-gray-600'
               )}
             >
               <Link className="w-5 h-5 mx-auto mb-2" />
-              Public Link
+              <span className="text-sm">Strava Link</span>
             </button>
             <button
               type="button"
@@ -160,16 +215,143 @@ function OnboardingContent() {
                 setError(null)
               }}
               className={cn(
-                'flex-1 py-4 px-6 rounded-xl font-medium transition-all border-2',
+                'flex-1 py-4 px-3 sm:px-6 rounded-xl font-medium transition-all border-2',
                 connectionType === 'terra'
                   ? 'bg-[#00ff88]/10 border-[#00ff88] text-[#00ff88]'
                   : 'bg-[#0a0a0a] border-gray-700 text-gray-400 hover:border-gray-600'
               )}
             >
               <Zap className="w-5 h-5 mx-auto mb-2" />
-              Terra API
+              <span className="text-sm">Terra API</span>
             </button>
           </div>
+
+          {/* Manual Entry Form */}
+          {connectionType === 'manual' && (
+            <div className="space-y-6">
+              {/* Personal Info */}
+              <div>
+                <h3 className="text-sm font-medium text-gray-400 mb-4 flex items-center gap-2">
+                  <User className="w-4 h-4" />
+                  Personal Info (Optional)
+                </h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-300">Age</label>
+                    <input
+                      type="number"
+                      value={age}
+                      onChange={(e) => setAge(e.target.value)}
+                      placeholder="30"
+                      min="16"
+                      max="100"
+                      className="w-full px-4 py-3 bg-[#0a0a0a] border border-gray-700 rounded-xl focus:outline-none focus:border-[#00ff88] focus:ring-2 focus:ring-[#00ff88]/20 transition-all"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-300">Gender</label>
+                    <select
+                      value={gender}
+                      onChange={(e) => setGender(e.target.value as any)}
+                      className="w-full px-4 py-3 bg-[#0a0a0a] border border-gray-700 rounded-xl focus:outline-none focus:border-[#00ff88] focus:ring-2 focus:ring-[#00ff88]/20 transition-all"
+                    >
+                      <option value="">Select...</option>
+                      <option value="male">Male</option>
+                      <option value="female">Female</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Weekly Mileage */}
+              <div>
+                <h3 className="text-sm font-medium text-gray-400 mb-4 flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4" />
+                  Training Volume
+                </h3>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-300">
+                    Avg Weekly Mileage (last 4 weeks)
+                  </label>
+                  <input
+                    type="number"
+                    value={weeklyMileage}
+                    onChange={(e) => setWeeklyMileage(e.target.value)}
+                    placeholder="25"
+                    min="0"
+                    max="200"
+                    className="w-full px-4 py-3 bg-[#0a0a0a] border border-gray-700 rounded-xl focus:outline-none focus:border-[#00ff88] focus:ring-2 focus:ring-[#00ff88]/20 transition-all"
+                  />
+                  <p className="text-xs text-gray-500">
+                    This helps us calculate your &ldquo;Mileage Tax&rdquo; for more accurate pacing
+                  </p>
+                </div>
+              </div>
+
+              {/* PRs */}
+              <div>
+                <h3 className="text-sm font-medium text-gray-400 mb-4 flex items-center gap-2">
+                  <Timer className="w-4 h-4" />
+                  Recent PRs (enter at least one)
+                </h3>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-300">5K PR</label>
+                    <input
+                      type="text"
+                      value={fiveKPR}
+                      onChange={(e) => setFiveKPR(e.target.value)}
+                      placeholder="MM:SS (e.g., 22:30)"
+                      className="w-full px-4 py-3 bg-[#0a0a0a] border border-gray-700 rounded-xl focus:outline-none focus:border-[#00ff88] focus:ring-2 focus:ring-[#00ff88]/20 transition-all"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-300">10K PR</label>
+                    <input
+                      type="text"
+                      value={tenKPR}
+                      onChange={(e) => setTenKPR(e.target.value)}
+                      placeholder="MM:SS (e.g., 47:00)"
+                      className="w-full px-4 py-3 bg-[#0a0a0a] border border-gray-700 rounded-xl focus:outline-none focus:border-[#00ff88] focus:ring-2 focus:ring-[#00ff88]/20 transition-all"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-300">Half Marathon PR</label>
+                    <input
+                      type="text"
+                      value={halfMarathonPR}
+                      onChange={(e) => setHalfMarathonPR(e.target.value)}
+                      placeholder="HH:MM:SS (e.g., 1:45:00)"
+                      className="w-full px-4 py-3 bg-[#0a0a0a] border border-gray-700 rounded-xl focus:outline-none focus:border-[#00ff88] focus:ring-2 focus:ring-[#00ff88]/20 transition-all"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Submit Button */}
+              <button
+                type="button"
+                onClick={handleManualSubmit}
+                disabled={isSavingManual || (!fiveKPR && !tenKPR && !halfMarathonPR)}
+                className={cn(
+                  'w-full py-4 px-6 rounded-xl font-bold transition-all flex items-center justify-center gap-2',
+                  isSavingManual || (!fiveKPR && !tenKPR && !halfMarathonPR)
+                    ? 'bg-gray-800 text-gray-500 cursor-not-allowed'
+                    : 'bg-[#00ff88] text-[#0a0a0a] hover:bg-[#00e677]'
+                )}
+              >
+                {isSavingManual ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  'Continue to Dashboard'
+                )}
+              </button>
+            </div>
+          )}
 
           {/* Link Input */}
           {connectionType === 'link' && (
