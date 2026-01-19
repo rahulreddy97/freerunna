@@ -1,4 +1,4 @@
-/// <reference path="../types/web-apis.d.ts" />
+/// <reference types="web-bluetooth" />
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'

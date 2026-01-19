@@ -20,7 +20,8 @@
     ],
     "paths": {
       "@/*": ["./*"]
-    }
+    },
+    "types": ["web-bluetooth"]
   },
   "include": [
     "next-env.d.ts",
