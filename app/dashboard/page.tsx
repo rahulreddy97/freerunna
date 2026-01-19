@@ -150,7 +150,44 @@ function DashboardContent() {
     }
   }, [planByWeek])
 
-  // Loading state - prevent flashing content
+  // useCallback hooks - MUST be before any conditional returns (Rules of Hooks)
+  const handleBuildPlan = useCallback(async (isRetry = false) => {
+    if (!currentUser?._id || !marathonDate || !daysPerWeek) return
+
+    setIsGenerating(true)
+    setGenerationError(null)
+    
+    try {
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => {
+          reject(new Error('Plan generation timed out. The AI is taking longer than expected. Please try again.'))
+        }, 180000)
+      })
+
+      const planPromise = generatePlan({
+        marathonDate,
+        daysPerWeek,
+        userId: currentUser._id,
+      })
+
+      await Promise.race([planPromise, timeoutPromise])
+      setShowPlanModal(false)
+      setGenerationError(null)
+      router.refresh()
+    } catch (error: any) {
+      console.error('Failed to generate plan:', error)
+      // Set error state instead of alert - allows retry button
+      setGenerationError(error.message || 'Failed to generate plan. Please try again.')
+    } finally {
+      setIsGenerating(false)
+    }
+  }, [currentUser?._id, marathonDate, daysPerWeek, generatePlan, router])
+
+  const handleRetryGeneration = useCallback(() => {
+    handleBuildPlan(true)
+  }, [handleBuildPlan])
+
+  // Loading state - prevent flashing content (AFTER all hooks)
   if (currentUser === undefined) {
     return <FullPageLoading message="Loading your dashboard..." />
   }
@@ -203,42 +240,6 @@ function DashboardContent() {
       setIsSavingManual(false)
     }
   }
-
-  const handleBuildPlan = useCallback(async (isRetry = false) => {
-    if (!currentUser?._id || !marathonDate || !daysPerWeek) return
-
-    setIsGenerating(true)
-    setGenerationError(null)
-    
-    try {
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => {
-          reject(new Error('Plan generation timed out. The AI is taking longer than expected. Please try again.'))
-        }, 180000)
-      })
-
-      const planPromise = generatePlan({
-        marathonDate,
-        daysPerWeek,
-        userId: currentUser._id,
-      })
-
-      await Promise.race([planPromise, timeoutPromise])
-      setShowPlanModal(false)
-      setGenerationError(null)
-      router.refresh()
-    } catch (error: any) {
-      console.error('Failed to generate plan:', error)
-      // Set error state instead of alert - allows retry button
-      setGenerationError(error.message || 'Failed to generate plan. Please try again.')
-    } finally {
-      setIsGenerating(false)
-    }
-  }, [currentUser?._id, marathonDate, daysPerWeek, generatePlan, router])
-
-  const handleRetryGeneration = useCallback(() => {
-    handleBuildPlan(true)
-  }, [handleBuildPlan])
 
   const handleStartRun = (workout: any) => {
     if (!activePlan) return
@@ -1018,7 +1019,7 @@ function DashboardContent() {
                     </div>
 
                     <button
-                      onClick={handleBuildPlan}
+                      onClick={() => handleBuildPlan()}
                       disabled={!marathonDate || !daysPerWeek}
                       className={cn(
                         'w-full py-4 rounded-xl font-bold transition-all flex items-center justify-center gap-2',
