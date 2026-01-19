@@ -17,13 +17,15 @@
 Set these in **Vercel Dashboard → Project Settings → Environment Variables**:
 
 ```env
-# Clerk (Frontend - REQUIRED)
+# Clerk (REQUIRED)
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_xxxxx
+CLERK_SECRET_KEY=sk_live_xxxxx
 NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
 NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
 
-# Convex (Frontend - REQUIRED)
+# Convex (REQUIRED)
 NEXT_PUBLIC_CONVEX_URL=https://your-deployment.convex.cloud
+CONVEX_DEPLOY_KEY=prod:xxx|eyJxxx...
 ```
 
 ### Convex Dashboard Environment Variables
@@ -208,7 +210,9 @@ npm install --save-dev @types/web-bluetooth
 
 ### Vercel Environment Variables
 - [ ] `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` - Clerk publishable key
+- [ ] `CLERK_SECRET_KEY` - Clerk secret key (for middleware)
 - [ ] `NEXT_PUBLIC_CONVEX_URL` - Convex deployment URL
+- [ ] `CONVEX_DEPLOY_KEY` - Convex deploy key (for auto-deploy)
 
 ### Convex Environment Variables
 - [ ] `CLERK_FRONTEND_API_URL` - Clerk domain for JWT verification

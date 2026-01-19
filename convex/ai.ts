@@ -98,12 +98,175 @@ export const generateFullMarathonPlan = action({
     let riegelExponent = 1.06 // Standard
     let mileageTaxDescription = 'standard endurance base'
     
-    if (weeklyMileage < 30) {
+    if (weeklyMileage < 20) {
+      riegelExponent = 1.10 // Heavy fatigue penalty for very low mileage
+      mileageTaxDescription = 'HEAVY FATIGUE PENALTY (< 20 mi/week)'
+    } else if (weeklyMileage < 30) {
       riegelExponent = 1.08 // Fatigue penalty
       mileageTaxDescription = 'FATIGUE PENALTY applied (< 30 mi/week)'
-    } else if (weeklyMileage > 50) {
+    } else if (weeklyMileage >= 50 && weeklyMileage < 70) {
       riegelExponent = 1.05 // Endurance bonus
-      mileageTaxDescription = 'endurance bonus (> 50 mi/week)'
+      mileageTaxDescription = 'endurance bonus (50-70 mi/week)'
+    } else if (weeklyMileage >= 70) {
+      riegelExponent = 1.04 // Elite endurance bonus
+      mileageTaxDescription = 'ELITE endurance bonus (70+ mi/week)'
+    }
+
+    // ============================================
+    // AGE & GENDER (needed for HR zones and age-grading)
+    // ============================================
+    const age = user.age || 30 // Default to prime running age
+    const gender = user.gender || 'male'
+
+    // ============================================
+    // HEART RATE ZONE TRAINING
+    // ============================================
+    
+    // Calculate max HR using Tanaka formula (more accurate than 220-age)
+    // Tanaka: 208 - (0.7 × age)
+    const maxHR = user.maxHeartRate || Math.round(208 - (0.7 * age))
+    
+    // Calculate heart rate zones (Karvonen method would need resting HR, using percentage method)
+    const hrZones = {
+      zone1: { name: 'Recovery', min: Math.round(maxHR * 0.50), max: Math.round(maxHR * 0.60), description: 'Very light, conversation pace' },
+      zone2: { name: 'Easy/Aerobic', min: Math.round(maxHR * 0.60), max: Math.round(maxHR * 0.70), description: 'Building aerobic base' },
+      zone3: { name: 'Tempo', min: Math.round(maxHR * 0.70), max: Math.round(maxHR * 0.80), description: 'Comfortably hard' },
+      zone4: { name: 'Threshold', min: Math.round(maxHR * 0.80), max: Math.round(maxHR * 0.90), description: 'Hard, limited conversation' },
+      zone5: { name: 'VO2max', min: Math.round(maxHR * 0.90), max: maxHR, description: 'Maximum effort' },
+    }
+
+    // ============================================
+    // PROGRESSIVE OVERLOAD LOGIC
+    // ============================================
+    
+    // Calculate weekly mileage progression with 10% rule
+    const calculateWeeklyMileage = (weekNum: number, totalWeeks: number, baseMileage: number): number => {
+      const taperStart = Math.max(totalWeeks - 3, Math.floor(totalWeeks * 0.85))
+      const peakWeek = taperStart - 1
+      
+      // Step-back week every 4th week (reduce by 20-30%)
+      const isStepBackWeek = weekNum % 4 === 0 && weekNum < taperStart
+      
+      // Calculate progressive build (max 10% increase per week)
+      let targetMileage = baseMileage
+      
+      if (weekNum <= peakWeek) {
+        // Build phase: Increase by ~8% per 3 weeks (with step-back)
+        const buildWeeks = Math.floor(weekNum / 4) * 3 + (weekNum % 4)
+        const progressFactor = 1 + (buildWeeks * 0.03) // ~3% per effective week
+        targetMileage = baseMileage * Math.min(progressFactor, 1.8) // Cap at 80% increase
+      }
+      
+      if (isStepBackWeek) {
+        targetMileage *= 0.75 // 25% reduction on step-back weeks
+      }
+      
+      // Taper phase: Reduce progressively
+      if (weekNum >= taperStart) {
+        const taperWeek = weekNum - taperStart + 1
+        const taperWeeks = totalWeeks - taperStart + 1
+        // Progressive taper: 70% -> 50% -> 30% of peak
+        const taperFactor = 0.7 - ((taperWeek - 1) / (taperWeeks - 1)) * 0.4
+        const peakMileage = baseMileage * 1.8
+        targetMileage = peakMileage * Math.max(taperFactor, 0.3)
+      }
+      
+      return Math.round(targetMileage)
+    }
+
+    // ============================================
+    // WORKOUT TYPE DEFINITIONS
+    // ============================================
+    
+    const workoutTypes = {
+      // Core workout types
+      easy: {
+        hrZone: 'zone2',
+        paceDescription: 'conversational pace',
+        purpose: 'aerobic development, recovery',
+      },
+      recovery: {
+        hrZone: 'zone1',
+        paceDescription: 'very easy, shuffle pace',
+        purpose: 'active recovery',
+      },
+      long: {
+        hrZone: 'zone2',
+        paceDescription: 'easy pace with final miles at marathon pace',
+        purpose: 'endurance, mental toughness, glycogen depletion training',
+      },
+      tempo: {
+        hrZone: 'zone3',
+        paceDescription: 'comfortably hard, threshold pace',
+        purpose: 'lactate threshold improvement',
+      },
+      interval: {
+        hrZone: 'zone4-5',
+        paceDescription: 'hard effort with recovery jogs',
+        purpose: 'VO2max development, speed',
+      },
+      
+      // Advanced workout types
+      yasso800s: {
+        hrZone: 'zone4-5',
+        paceDescription: 'Marathon goal time (hours:minutes) as 800m time (minutes:seconds)',
+        purpose: 'Marathon predictor workout, speed endurance',
+        example: 'Target 3:30 marathon? Run 800s in 3:30 each',
+      },
+      marathonPace: {
+        hrZone: 'zone3',
+        paceDescription: 'exact goal marathon pace',
+        purpose: 'Race-specific training, pacing practice',
+      },
+      fartlek: {
+        hrZone: 'zone2-4',
+        paceDescription: 'unstructured speed play, alternating fast/slow',
+        purpose: 'Fun speed work, mental engagement',
+      },
+      hillRepeats: {
+        hrZone: 'zone4',
+        paceDescription: 'hard uphill effort, easy jog down',
+        purpose: 'Leg strength, running economy',
+      },
+      progression: {
+        hrZone: 'zone2-3',
+        paceDescription: 'start easy, finish at tempo or faster',
+        purpose: 'Race simulation, negative split practice',
+      },
+      strides: {
+        hrZone: 'zone4-5',
+        paceDescription: '4-6 x 20-30 second accelerations at end of easy run',
+        purpose: 'Running form, neuromuscular activation',
+      },
+    }
+
+    // ============================================
+    // WEATHER/HEAT ADJUSTMENT
+    // ============================================
+    
+    // Pace adjustment based on temperature (seconds per mile to add)
+    const getHeatAdjustment = (tempF: number): { adjustment: number; description: string } => {
+      if (tempF <= 50) return { adjustment: 0, description: 'Ideal conditions' }
+      if (tempF <= 60) return { adjustment: 0, description: 'Good conditions' }
+      if (tempF <= 70) return { adjustment: 10, description: 'Add 10 sec/mile' }
+      if (tempF <= 80) return { adjustment: 20, description: 'Add 20 sec/mile, hydrate more' }
+      if (tempF <= 90) return { adjustment: 40, description: 'Add 40 sec/mile, consider early morning' }
+      return { adjustment: 60, description: 'Add 60+ sec/mile, consider treadmill or rest' }
+    }
+
+    // ============================================
+    // RECOVERY SCORE ADAPTATION
+    // ============================================
+    
+    // Adjust workout intensity based on recovery score (from Whoop, Garmin, etc.)
+    const getRecoveryAdjustment = (recoveryScore: number | undefined): { factor: number; description: string } => {
+      if (!recoveryScore) return { factor: 1.0, description: 'No recovery data - following standard plan' }
+      
+      if (recoveryScore >= 80) return { factor: 1.1, description: 'Excellent recovery - can push harder today' }
+      if (recoveryScore >= 67) return { factor: 1.0, description: 'Good recovery - normal training' }
+      if (recoveryScore >= 50) return { factor: 0.9, description: 'Moderate recovery - reduce intensity 10%' }
+      if (recoveryScore >= 33) return { factor: 0.75, description: 'Poor recovery - easy day or rest' }
+      return { factor: 0.5, description: 'Very low recovery - recommend rest day' }
     }
 
     // Calculate predicted marathon pace using adjusted Riegel formula
@@ -114,8 +277,7 @@ export const generateFullMarathonPlan = action({
     const predictedMarathonPace = user.predictedMarathonPace || formatTime(predictedMarathonPacePerMile)
 
     // CHECK 3: AGE-GRADING (Safety check for demographics)
-    const age = user.age || 30 // Default to prime running age
-    const gender = user.gender || 'male'
+    // Note: age and gender are declared earlier for HR zone calculations
     
     // Age-grading factors (simplified - real tables are more complex)
     // These ensure paces are realistic for the user's demographic
@@ -202,8 +364,12 @@ export const generateFullMarathonPlan = action({
           type: {
             type: SchemaType.STRING,
             format: 'enum',
-            enum: ['rest', 'easy', 'tempo', 'interval', 'long', 'recovery'],
+            enum: ['rest', 'easy', 'tempo', 'interval', 'long', 'recovery', 'marathonPace', 'progression', 'fartlek', 'hillRepeats', 'yasso800s'],
             description: 'Type of workout',
+          },
+          hrZone: {
+            type: SchemaType.STRING,
+            description: 'Target heart rate zone (e.g., "zone2", "zone3-4")',
           },
           distance: {
             type: SchemaType.NUMBER,
@@ -290,26 +456,58 @@ export const generateFullMarathonPlan = action({
       chunkStartDate.setDate(chunkStartDate.getDate() + (startWeek - 1) * 7)
       const chunkStartDateStr = chunkStartDate.toISOString().split('T')[0]
 
-      // Identify phase
+      // Calculate target weekly mileage for this chunk (must be before phase description)
+      const chunkTargetMileage = calculateWeeklyMileage(startWeek, totalWeeks, weeklyMileage)
+      const isStepBackChunk = startWeek % 4 === 0 && startWeek < Math.max(totalWeeks - 3, Math.floor(totalWeeks * 0.85))
+
+      // Identify phase with detailed workout recommendations
       const phase = getPhase(startWeek, totalWeeks)
       const phaseDescription =
         phase === 'Base'
-          ? 'Focus on aerobic foundation, easy runs, building base mileage'
+          ? `Focus on aerobic foundation (Zone 2). Workouts: easy runs, recovery runs, building long run gradually. Add strides 2-3x/week. Target: ${chunkTargetMileage} miles this week.`
           : phase === 'Build'
-          ? 'Increase volume and introduce tempo runs, maintain aerobic base'
+          ? `Increase volume and introduce quality workouts. Workouts: easy, tempo, fartlek, hillRepeats (1x/week), longer long runs. Target: ${chunkTargetMileage} miles this week.`
           : phase === 'Peak'
-          ? 'Maximum volume and intensity, marathon-specific pace work, long runs'
-          : 'Reduce volume significantly, maintain intensity, focus on race readiness and recovery'
+          ? `Maximum volume and marathon-specific training. Workouts: marathonPace runs, yasso800s, progression runs, longest long runs (18-22 miles). Target: ${chunkTargetMileage} miles this week (PEAK VOLUME).`
+          : `TAPER - Reduce volume 40-60%, maintain intensity. Workouts: easy, short tempo, strides. Long run max 10-12 miles. Focus on rest, nutrition, race prep. Target: ${chunkTargetMileage} miles this week.`
 
-      // Build system instruction with Triple-Check accuracy data
-      const systemInstruction = `You are an ELITE ${totalWeeks}-week marathon coach using TRIPLE-CHECK accuracy methodology.
+      // Build system instruction with Triple-Check accuracy data + enhanced training science
+      const systemInstruction = `You are an ELITE ${totalWeeks}-week marathon coach using ADVANCED TRAINING SCIENCE methodology.
 
 ATHLETE PROFILE (Data Quality: ${dataQuality}):
 - Fitness Level: ${fitnessLevel}
 - Reference PR: ${formatTime(prTimeMinutes)} for ${prDistanceKm}km (source: ${prSource})
 - VDOT Score: ${vdotScore} (Jack Daniels' Running Formula)
-- Weekly Mileage: ${weeklyMileage} mi/week (${mileageTaxDescription})
+- Current Weekly Mileage: ${weeklyMileage} mi/week (${mileageTaxDescription})
+- Target Mileage This Week: ${chunkTargetMileage} mi/week ${isStepBackChunk ? '(STEP-BACK WEEK - reduced volume)' : ''}
 - Age/Gender: ${age}/${gender} (age-grading factor: ${ageGradingFactor.toFixed(3)})
+- Max Heart Rate: ${maxHR} bpm
+
+HEART RATE ZONES (for workout intensity guidance):
+- Zone 1 (${hrZones.zone1.name}): ${hrZones.zone1.min}-${hrZones.zone1.max} bpm - ${hrZones.zone1.description}
+- Zone 2 (${hrZones.zone2.name}): ${hrZones.zone2.min}-${hrZones.zone2.max} bpm - ${hrZones.zone2.description}
+- Zone 3 (${hrZones.zone3.name}): ${hrZones.zone3.min}-${hrZones.zone3.max} bpm - ${hrZones.zone3.description}
+- Zone 4 (${hrZones.zone4.name}): ${hrZones.zone4.min}-${hrZones.zone4.max} bpm - ${hrZones.zone4.description}
+- Zone 5 (${hrZones.zone5.name}): ${hrZones.zone5.min}-${hrZones.zone5.max} bpm - ${hrZones.zone5.description}
+
+PROGRESSIVE OVERLOAD RULES:
+- NEVER increase weekly mileage by more than 10% from previous week
+- Every 4th week is a STEP-BACK WEEK (reduce volume by 20-30%)
+- Peak mileage should be reached 3-4 weeks before the marathon
+- Taper phase: progressively reduce to 30-40% of peak mileage
+
+WORKOUT VARIETY (use these throughout the plan):
+- easy: Zone 2, conversational pace - aerobic development
+- recovery: Zone 1, very easy shuffle - active recovery
+- long: Zone 2 with final miles at marathon pace - endurance
+- tempo: Zone 3, comfortably hard - lactate threshold
+- interval: Zone 4-5, hard with recovery - VO2max
+- marathonPace: Zone 3, exact goal pace - race-specific
+- progression: Zone 2 to 3, start easy finish fast - negative split practice
+- fartlek: Zone 2-4, unstructured speed play - fun speed work
+- hillRepeats: Zone 4, hard uphill efforts - leg strength (include 1x per week in Build phase)
+- yasso800s: Zone 4-5, 800m repeats - marathon predictor (include in Peak phase)
+- strides: Add 4-6 x 20sec accelerations at end of 2-3 easy runs per week
 
 CALCULATED TRAINING PACES (using Vickers-Vertosick mileage adjustment, Riegel exponent: ${riegelExponent}):
 - Predicted Marathon Pace: ${adjustedMarathonPace}/mile

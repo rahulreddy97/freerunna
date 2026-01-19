@@ -227,8 +227,8 @@ function LandingPage() {
               {/* Subheadline */}
               <p className="text-lg sm:text-xl text-gray-400 mb-8 max-w-xl">
                 Stop guessing your paces. We sync your Whoop recovery, analyze your Strava history, 
-                and build a <span className="text-white font-medium">112-day marathon plan</span> tailored 
-                to your exact fitness level.
+                and build a <span className="text-white font-medium">personalized marathon plan</span> tailored 
+                to your exact fitness level and race date.
               </p>
 
               {/* CTAs */}
@@ -512,7 +512,7 @@ function LandingPage() {
               Every Day. <span className="text-[#00ff88]">Perfectly Planned.</span>
             </h2>
             <p className="text-gray-400 max-w-2xl mx-auto">
-              See exactly what your 112-day journey looks like. Every run, every rest day, every pace—calculated for your success.
+              See exactly what your training journey looks like. Every run, every rest day, every pace—calculated for your success.
             </p>
           </motion.div>
 
