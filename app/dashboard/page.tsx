@@ -73,20 +73,29 @@ export default function DashboardPage() {
   )
 }
 
+// Type guard to check if user needs creation
+function isValidUser(user: any): user is { _id: any; [key: string]: any } {
+  return user && '_id' in user && !('needsCreation' in user)
+}
+
 function DashboardContent() {
   const router = useRouter()
   const currentUser = useQuery(api.users.getCurrentUser)
+  
+  // Only query plans if we have a valid user (not a "needs creation" object)
+  const hasValidUser = isValidUser(currentUser)
   const activePlan = useQuery(
     api.plans.getActivePlan,
-    currentUser?._id ? { userId: currentUser._id } : 'skip'
+    hasValidUser ? { userId: currentUser._id } : 'skip'
   )
   const planByWeek = useQuery(
     api.plans.getPlanByWeek,
-    currentUser?._id ? { userId: currentUser._id } : 'skip'
+    hasValidUser ? { userId: currentUser._id } : 'skip'
   )
   const generatePlan = useAction(api.ai.generateFullMarathonPlan)
   const updateConnections = useMutation(api.users.updateConnections)
   const updateManualStats = useMutation(api.users.updateManualStats)
+  const clearWorkouts = useMutation(api.workouts.clearAllWorkouts)
 
   // State
   const [showSettings, setShowSettings] = useState(false)
@@ -112,10 +121,14 @@ function DashboardContent() {
   const [tenKPR, setTenKPR] = useState('')
   const [halfMarathonPR, setHalfMarathonPR] = useState('')
   const [isSavingManual, setIsSavingManual] = useState(false)
+  
+  // Reset plan state
+  const [showResetConfirm, setShowResetConfirm] = useState(false)
+  const [isResetting, setIsResetting] = useState(false)
 
-  // Initialize form values from user data
+  // Initialize form values from user data (only if valid user)
   useEffect(() => {
-    if (currentUser) {
+    if (hasValidUser) {
       setStravaLink(currentUser.stravaLink || '')
       setTerraApiKey(currentUser.terraApiKey || '')
       setAge(currentUser.age?.toString() || '')
@@ -125,14 +138,19 @@ function DashboardContent() {
       setTenKPR(currentUser.manualPRs?.tenK || '')
       setHalfMarathonPR(currentUser.manualPRs?.halfMarathon || '')
     }
-  }, [currentUser])
+  }, [currentUser, hasValidUser])
 
-  // Redirect if not onboarded
+  // Redirect if user needs creation or not onboarded
   useEffect(() => {
-    if (currentUser && !currentUser.onboardingComplete) {
+    if (currentUser && 'needsCreation' in currentUser) {
+      // User needs to be created - redirect to home
+      router.push('/')
+      return
+    }
+    if (hasValidUser && !currentUser.onboardingComplete) {
       router.push('/onboarding')
     }
-  }, [currentUser, router])
+  }, [currentUser, hasValidUser, router])
 
   // Find today's workout
   useEffect(() => {
@@ -152,7 +170,7 @@ function DashboardContent() {
 
   // useCallback hooks - MUST be before any conditional returns (Rules of Hooks)
   const handleBuildPlan = useCallback(async (isRetry = false) => {
-    if (!currentUser?._id || !marathonDate || !daysPerWeek) return
+    if (!hasValidUser || !marathonDate || !daysPerWeek) return
 
     setIsGenerating(true)
     setGenerationError(null)
@@ -164,6 +182,10 @@ function DashboardContent() {
         }, 180000)
       })
 
+      if (!hasValidUser) {
+        throw new Error('User not found. Please refresh the page.')
+      }
+      
       const planPromise = generatePlan({
         marathonDate,
         daysPerWeek,
@@ -181,7 +203,7 @@ function DashboardContent() {
     } finally {
       setIsGenerating(false)
     }
-  }, [currentUser?._id, marathonDate, daysPerWeek, generatePlan, router])
+  }, [hasValidUser, currentUser, marathonDate, daysPerWeek, generatePlan, router])
 
   const handleRetryGeneration = useCallback(() => {
     handleBuildPlan(true)
@@ -192,13 +214,18 @@ function DashboardContent() {
     return <FullPageLoading message="Loading your dashboard..." />
   }
 
+  // If user needs creation, show loading (redirect will happen)
+  if (!hasValidUser) {
+    return <FullPageLoading message="Setting up your account..." />
+  }
+
   // Loading plan data (show skeleton while syncing)
-  const isPlanLoading = currentUser?._id && activePlan === undefined
+  const isPlanLoading = hasValidUser && activePlan === undefined
 
   const hasActivePlan = activePlan !== undefined && activePlan !== null
-  const accuracyScore = currentUser?.accuracyScore || 50
-  const hasMissingData = !currentUser?.weeklyMileage || 
-    (!currentUser?.manualPRs?.fiveK && !currentUser?.manualPRs?.tenK && !currentUser?.manualPRs?.halfMarathon)
+  const accuracyScore = currentUser.accuracyScore || 50
+  const hasMissingData = !currentUser.weeklyMileage || 
+    (!currentUser.manualPRs?.fiveK && !currentUser.manualPRs?.tenK && !currentUser.manualPRs?.halfMarathon)
 
   const getMinDate = () => {
     const minDate = new Date()
@@ -238,6 +265,26 @@ function DashboardContent() {
       alert(`Failed to save: ${error.message}`)
     } finally {
       setIsSavingManual(false)
+    }
+  }
+
+  const handleResetPlan = async () => {
+    setIsResetting(true)
+    try {
+      await clearWorkouts({})
+      setShowResetConfirm(false)
+      setShowSettings(false)
+      setHeroWorkout(null)
+      setExpandedWeek(null)
+      // Open plan modal for new date
+      setTimeout(() => {
+        setShowPlanModal(true)
+      }, 300)
+    } catch (error: any) {
+      console.error('Failed to reset plan:', error)
+      alert(`Failed to reset: ${error.message}`)
+    } finally {
+      setIsResetting(false)
     }
   }
 
@@ -611,6 +658,49 @@ function DashboardContent() {
                               <div className="text-xl font-bold">{currentUser.predictedMarathonPace}/mi</div>
                             </div>
                           )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Reset Plan Section */}
+                {hasActivePlan && (
+                  <div className="mt-6 pt-6 border-t border-white/10">
+                    {!showResetConfirm ? (
+                      <button
+                        onClick={() => setShowResetConfirm(true)}
+                        className="w-full py-3 px-4 bg-red-500/10 text-red-400 rounded-xl font-medium hover:bg-red-500/20 transition-colors flex items-center justify-center gap-2"
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                        Reset Plan & Choose New Date
+                      </button>
+                    ) : (
+                      <div className="space-y-3">
+                        <p className="text-sm text-gray-400 text-center">
+                          This will delete your current plan. Are you sure?
+                        </p>
+                        <div className="flex gap-3">
+                          <button
+                            onClick={() => setShowResetConfirm(false)}
+                            className="flex-1 py-3 px-4 bg-white/5 text-gray-400 rounded-xl font-medium hover:bg-white/10 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={handleResetPlan}
+                            disabled={isResetting}
+                            className="flex-1 py-3 px-4 bg-red-500 text-white rounded-xl font-bold hover:bg-red-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                          >
+                            {isResetting ? (
+                              <>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                Resetting...
+                              </>
+                            ) : (
+                              'Yes, Reset'
+                            )}
+                          </button>
                         </div>
                       </div>
                     )}

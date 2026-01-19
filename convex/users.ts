@@ -116,7 +116,47 @@ export const getCurrentUser = query({
       .withIndex('by_clerkUserId', (q) => q.eq('clerkUserId', identity.subject))
       .first()
 
+    // Return user if found, otherwise return a "needs creation" flag
+    // The mutation will handle actual creation
+    if (!user) {
+      return { needsCreation: true, clerkUserId: identity.subject, email: identity.email || '' }
+    }
+
     return user
+  },
+})
+
+// Mutation to create user on first login (called from client when user doesn't exist)
+export const ensureUserExists = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity()
+    if (identity === null) {
+      throw new Error('Not authenticated')
+    }
+
+    // Check if user already exists
+    const existingUser = await ctx.db
+      .query('users')
+      .withIndex('by_clerkUserId', (q) => q.eq('clerkUserId', identity.subject))
+      .first()
+
+    if (existingUser) {
+      return existingUser._id
+    }
+
+    // Create new user
+    const now = Date.now()
+    const userId = await ctx.db.insert('users', {
+      clerkUserId: identity.subject,
+      email: identity.email || '',
+      onboardingComplete: false,
+      isLive: false,
+      createdAt: now,
+      updatedAt: now,
+    })
+
+    return userId
   },
 })
 

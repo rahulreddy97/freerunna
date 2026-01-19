@@ -30,9 +30,15 @@ export default function OnboardingPage() {
   )
 }
 
+// Type guard to check if user is a valid user (not needs creation)
+function isValidUser(user: any): user is { _id: any; onboardingComplete: boolean; [key: string]: any } {
+  return user && '_id' in user && !('needsCreation' in user)
+}
+
 function OnboardingContent() {
   const router = useRouter()
   const currentUser = useQuery(api.users.getCurrentUser)
+  const ensureUserExists = useMutation(api.users.ensureUserExists)
   const connectData = useMutation(api.users.connectData)
   const analyzeActivities = useMutation(api.users.analyzeActivities)
 
@@ -40,22 +46,43 @@ function OnboardingContent() {
   const [linkUrl, setLinkUrl] = useState('')
   const [isConnecting, setIsConnecting] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [isCreatingUser, setIsCreatingUser] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const hasValidUser = isValidUser(currentUser)
+
+  // Create user if needed
+  useEffect(() => {
+    const createUser = async () => {
+      if (currentUser && 'needsCreation' in currentUser && !isCreatingUser) {
+        setIsCreatingUser(true)
+        try {
+          await ensureUserExists()
+        } catch (err) {
+          console.error('Error creating user:', err)
+        }
+        setIsCreatingUser(false)
+      }
+    }
+    createUser()
+  }, [currentUser, ensureUserExists, isCreatingUser])
 
   // Redirect if already connected
   useEffect(() => {
-    if (currentUser?.onboardingComplete) {
-      router.push('/run')
+    if (hasValidUser && currentUser.onboardingComplete) {
+      router.push('/dashboard')
     }
-  }, [currentUser, router])
+  }, [currentUser, hasValidUser, router])
 
-  // Show loading state while checking user
-  if (currentUser === undefined) {
+  // Show loading state while checking user or creating user
+  if (currentUser === undefined || !hasValidUser) {
     return (
       <div className="min-h-screen bg-[#0a0a0a] text-white flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#00ff88] mx-auto"></div>
-          <p className="mt-4 text-gray-400">Loading...</p>
+          <p className="mt-4 text-gray-400">
+            {isCreatingUser ? 'Setting up your account...' : 'Loading...'}
+          </p>
         </div>
       </div>
     )

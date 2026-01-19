@@ -56,13 +56,16 @@ function RunTrackingContent() {
   const currentUser = useQuery(api.users.getCurrentUser)
   const saveLiveRun = useMutation(api.workouts.saveLiveRun)
 
+  // Type guard to check if user is valid
+  const hasValidUser = currentUser && '_id' in currentUser && !('needsCreation' in currentUser)
+
   // Get workout ID from URL
   const workoutId = searchParams?.get('workoutId') || null
 
-  // Fetch today's workout if workoutId provided
+  // Fetch today's workout if workoutId provided (only if valid user)
   const todaysWorkout = useQuery(
     api.plans.getTodaysWorkout,
-    currentUser?._id ? { userId: currentUser._id } : 'skip'
+    hasValidUser ? { userId: (currentUser as any)._id } : 'skip'
   )
 
   // Determine workout parameters
