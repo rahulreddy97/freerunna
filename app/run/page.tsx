@@ -1,3 +1,4 @@
+/// <reference path="../types/web-apis.d.ts" />
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
