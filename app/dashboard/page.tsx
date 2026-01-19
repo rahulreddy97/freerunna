@@ -883,9 +883,46 @@ function DashboardContent() {
           {/* Minimalist Timeline */}
           {hasActivePlan && planByWeek && (
             <div className="space-y-2">
-              <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wider mb-4">
-                {planByWeek.totalWeeks}-Week Training Plan
-              </h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wider">
+                  {planByWeek.totalWeeks}-Week Training Plan
+                </h2>
+                
+                {/* Reset Plan Button */}
+                {!showResetConfirm ? (
+                  <button
+                    onClick={() => setShowResetConfirm(true)}
+                    className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-colors"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    Reset Plan
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-400">Delete plan?</span>
+                    <button
+                      onClick={() => setShowResetConfirm(false)}
+                      className="px-2 py-1 text-xs text-gray-400 hover:text-white transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleResetPlan}
+                      disabled={isResetting}
+                      className="px-3 py-1 text-xs font-medium bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors disabled:opacity-50 flex items-center gap-1"
+                    >
+                      {isResetting ? (
+                        <>
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          Resetting...
+                        </>
+                      ) : (
+                        'Yes, Reset'
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
               
               {planByWeek.weeks.map((week) => {
                 const isExpanded = expandedWeek === week.week
