@@ -26,15 +26,34 @@ export const viewport: Viewport = {
   viewportFit: 'cover',
 }
 
+// Get Clerk publishable key - required for auth
+const clerkPubKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  // If no Clerk key, render without auth (for build/preview without env vars)
+  if (!clerkPubKey) {
+    return (
+      <html lang="en">
+        <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+          <div className="min-h-screen bg-black flex items-center justify-center">
+            <div className="text-center text-white">
+              <h1 className="text-2xl font-bold mb-4">Configuration Required</h1>
+              <p className="text-white/70">Missing NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY</p>
+            </div>
+          </div>
+        </body>
+      </html>
+    )
+  }
+
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        <ClerkProvider>
+        <ClerkProvider publishableKey={clerkPubKey}>
           <ConvexClientProvider>{children}</ConvexClientProvider>
         </ClerkProvider>
       </body>
